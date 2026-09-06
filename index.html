@@ -70,16 +70,16 @@
     <h2>Parámetros</h2>
     
     <div class="form-group">
-      <label for="dataInput">Puntos (hora o tiempo, variable):</label>
-      <textarea id="dataInput">8:00, 2
-10:00, 5
-12:00, 3
-14:00, 8
-16:00, 6
-18:00, 9
-20:00, 7
-22:00, 4</textarea>
-      <small style="color:#64748b;">Formatos aceptados:<br>• 8:00, 2 (8:00 AM es x=0)<br>• 0, 2 (horas ya transcurridas)</small>
+      <label for="dataInput">Puntos (Hora, Variable Y):</label>
+      <textarea id="dataInput">8, 20
+10, 50
+12, 30
+2, 80
+4, 60
+6, 90
+8, 70
+10, 40</textarea>
+      <small style="color:#64748b;">Escribe las horas (8, 10, 12, 2, 4, 6, 8, 10) y los valores de Y (hasta 100).</small>
     </div>
 
     <div class="form-group">
@@ -135,49 +135,31 @@ function interpolate(x, points) {
   return 0;
 }
 
-// Función auxiliar para convertir horas (string o número) a horas transcurridas desde las 8:00 AM
-function parseTimeToHours(timeStr) {
-  const str = timeStr.toString().trim().toLowerCase();
-  
-  // Si contiene ":" (ej: "8:00", "10:30", "2:00 pm")
-  if (str.includes(':')) {
-    const parts = str.split(':');
-    let hours = parseFloat(parts[0]);
-    let minutes = parseFloat(parts[1]) || 0;
-    
-    if (str.includes('pm') && hours < 12) hours += 12;
-    if (str.includes('am') && hours === 12) hours = 0;
-    
-    const decimalHours = hours + (minutes / 60);
-    // Calcular transcurrido desde las 8:00 AM (8.0)
-    return decimalHours - 8;
-  }
-  
-  // Si es solo un número directo
-  const val = parseFloat(str);
-  // Si el valor ingresado es entre 8 y 24, asumimos que es hora del día en punto (ej: 8, 10, 12, 14, 22)
-  if (val >= 8 && val <= 24) {
-    return val - 8;
-  }
-  // Si es menor a 8 (ej: 0, 2, 4, 14), se asume que ya son horas transcurridas
-  return val;
-}
-
 function parseData() {
   const lines = document.getElementById('dataInput').value.trim().split('\n');
   const points = [];
   
+  let isAfterNoon = false;
+  let previousHour = -1;
+
   for (let line of lines) {
     const parts = line.split(',');
     if (parts.length >= 2) {
-      const xRaw = parts[0];
-      const yRaw = parts[1];
-      
-      const x = parseTimeToHours(xRaw);
-      const y = parseFloat(yRaw.trim());
-      
-      if (!isNaN(x) && !isNaN(y)) {
-        points.push({x, y});
+      let h = parseFloat(parts[0].trim());
+      const y = parseFloat(parts[1].trim());
+
+      if (!isNaN(h) && !isNaN(y)) {
+        if (previousHour === 12 && h < 12) {
+          isAfterNoon = true;
+        }
+        
+        let continuousX = h;
+        if (isAfterNoon && h < 12) {
+          continuousX = h + 12;
+        }
+
+        points.push({ x: continuousX, y: y });
+        previousHour = h;
       }
     }
   }
@@ -206,7 +188,7 @@ function updateSimulation() {
     const x = a + i * step;
     const y = interpolate(x, points);
     curvePoints.push({x, y});
-    if (i < resolution) exactArea += y * step; // Integral Trapezoidal fina
+    if (i < resolution) exactArea += y * step;
   }
 
   // 2. Construcción de los rectángulos
@@ -224,7 +206,6 @@ function updateSimulation() {
     const height = interpolate(evalX, points);
     estimatedArea += height * dx;
 
-    // Generar el rectángulo como una barra de rango x
     rectBars.push({
       xMin: xLeft,
       xMax: xRight,
@@ -238,7 +219,6 @@ function updateSimulation() {
   document.getElementById('exactArea').innerText = exactArea.toFixed(2);
   document.getElementById('errorVal').innerText = error.toFixed(2) + '%';
 
-  // Dibuja el gráfico con Chart.js
   renderChart(points, curvePoints, rectBars, a, b);
 }
 
@@ -246,7 +226,6 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
   const ctx = document.getElementById('riemannChart').getContext('2d');
   if (chart) chart.destroy();
 
-  // Generar dataset para dibujar los rectángulos paso a paso
   const rectDatasets = rectBars.map((r) => ({
     type: 'line',
     label: 'Rectángulo',
@@ -294,7 +273,7 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
       plugins: {
         legend: {
           labels: {
-            filter: item => item.text !== 'Rectángulo' // Ocultar duplicados
+            filter: item => item.text !== 'Rectángulo'
           }
         }
       },
@@ -304,12 +283,31 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
           position: 'bottom', 
           min: a, 
           max: b,
+          ticks: {
+            stepSize: 2,
+            callback: function(value) {
+              if (value > 12) {
+                return value - 12;
+              }
+              return value;
+            }
+          },
           title: {
             display: true,
-            text: 'Horas transcurridas (0 = 8:00 AM)'
+            text: 'Hora del día (8 am a 10 pm)'
           }
         },
-        y: { beginAtZero: true }
+        y: { 
+          min: 0,
+          max: 100,
+          ticks: {
+            stepSize: 20
+          },
+          title: {
+            display: true,
+            text: 'Variable Y'
+          }
+        }
       }
     }
   });
