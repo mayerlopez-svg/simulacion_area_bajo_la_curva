@@ -70,7 +70,7 @@
     <h2>Parámetros</h2>
     
     <div class="form-group">
-      <label for="dataInput">Puntos (Hora, Variable Y):</label>
+      <label for="dataInput">Puntos (Hora, % Carga):</label>
       <textarea id="dataInput">8, 20
 10, 50
 12, 30
@@ -79,7 +79,7 @@
 6, 90
 8, 70
 10, 40</textarea>
-      <small style="color:#64748b;">Escribe las horas (8, 10, 12, 2, 4, 6, 8, 10) y los valores de Y (hasta 100).</small>
+      <small style="color:#64748b;">Escribe las horas (8, 10, 12, 2, 4, 6, 8, 10) y los valores de % Carga (hasta 100).</small>
     </div>
 
     <div class="form-group">
@@ -226,21 +226,28 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
   const ctx = document.getElementById('riemannChart').getContext('2d');
   if (chart) chart.destroy();
 
-  const rectDatasets = rectBars.map((r) => ({
-    type: 'line',
-    label: 'Rectángulo',
-    data: [
-      {x: r.xMin, y: 0},
-      {x: r.xMin, y: r.y},
-      {x: r.xMax, y: r.y},
-      {x: r.xMax, y: 0}
-    ],
-    borderColor: 'rgba(37, 99, 235, 0.6)',
-    backgroundColor: 'rgba(37, 99, 235, 0.25)',
-    fill: true,
-    pointRadius: 0,
-    borderWidth: 1.5
-  }));
+  const totalRects = rectBars.length;
+  const rectDatasets = rectBars.map((r, i) => {
+    const hue = (i * 360) / totalRects;
+    const borderColor = `hsla(${hue}, 70%, 45%, 0.8)`;
+    const backgroundColor = `hsla(${hue}, 70%, 55%, 0.4)`;
+
+    return {
+      type: 'line',
+      label: 'Rectángulo',
+      data: [
+        {x: r.xMin, y: 0},
+        {x: r.xMin, y: r.y},
+        {x: r.xMax, y: r.y},
+        {x: r.xMax, y: 0}
+      ],
+      borderColor: borderColor,
+      backgroundColor: backgroundColor,
+      fill: true,
+      pointRadius: 0,
+      borderWidth: 1.5
+    };
+  });
 
   chart = new Chart(ctx, {
     data: {
@@ -294,7 +301,7 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
           },
           title: {
             display: true,
-            text: 'Hora del día (8 am a 10 pm)'
+            text: '(t) Horas'
           }
         },
         y: { 
@@ -305,7 +312,7 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
           },
           title: {
             display: true,
-            text: 'Variable Y'
+            text: '% Carga del celular'
           }
         }
       }
