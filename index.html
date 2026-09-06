@@ -228,9 +228,10 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
 
   const totalRects = rectBars.length;
   const rectDatasets = rectBars.map((r, i) => {
+    // Generar colores distintos para cada rectángulo
     const hue = (i * 360) / totalRects;
-    const borderColor = `hsla(${hue}, 70%, 45%, 0.8)`;
-    const backgroundColor = `hsla(${hue}, 70%, 55%, 0.4)`;
+    const borderColor = `hsla(${hue}, 75%, 45%, 0.85)`;
+    const backgroundColor = `hsla(${hue}, 75%, 55%, 0.4)`;
 
     return {
       type: 'line',
@@ -312,7 +313,8 @@ function renderChart(rawPoints, curvePoints, rectBars, a, b) {
           },
           title: {
             display: true,
-            text: '% Carga del celular'
+            align: 'end', // Posiciona el título en la parte superior del eje Y
+            text: '% de carga del celular'
           }
         }
       }
