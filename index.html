@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simulador de Área Bajo la Curva (Sumas de Riemann)</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --accent: #2563eb;
+      --border: #cbd5e1;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--card);
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      border: 1px solid var(--border);
+    }
+    h2 { margin-top: 0; font-size: 1.2rem; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 0.85rem; }
+    textarea, select, input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      box-sizing: border-box;
+      font-family: inherit;
+    }
+    textarea { height: 160px; resize: vertical; }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    .metric-card {
+      background: #f1f5f9;
+      padding: 10px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .metric-card .val { font-size: 1.1rem; font-weight: bold; color: var(--accent); }
+    .metric-card .lbl { font-size: 0.75rem; color: #64748b; }
+    canvas { max-width: 100%; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="panel">
+    <h2>Parámetros</h2>
+    
+    <div class="form-group">
+      <label for="dataInput">Puntos (hora o tiempo, variable):</label>
+      <textarea id="dataInput">8:00, 2
+10:00, 5
+12:00, 3
+14:00, 8
+16:00, 6
+18:00, 9
+20:00, 7
+22:00, 4</textarea>
+      <small style="color:#64748b;">Formatos aceptados:<br>• 8:00, 2 (8:00 AM es x=0)<br>• 0, 2 (horas ya transcurridas)</small>
+    </div>
+
+    <div class="form-group">
+      <label for="rectCount">Número de rectángulos (N): <span id="nVal">7</span></label>
+      <input type="range" id="rectCount" min="2" max="50" value="7">
+    </div>
+
+    <div class="form-group">
+      <label for="ruleSelect">Regla de evaluación:</label>
+      <select id="ruleSelect">
+        <option value="left">Extremo Izquierdo</option>
+        <option value="right">Extremo Derecho</option>
+        <option value="midpoint">Punto Medio</option>
+      </select>
+    </div>
+
+    <button onclick="updateSimulation()" style="width:100%; padding:10px; background:var(--accent); color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold;">Actualizar Datos</button>
+  </div>
+
+  <div class="panel">
+    <div class="metrics">
+      <div class="metric-card">
+        <div class="lbl">Área Estimada</div>
+        <div class="val" id="estimatedArea">0.00</div>
+      </div>
+      <div class="metric-card">
+        <div class="lbl">Área "Exacta" (Spline)</div>
+        <div class="val" id="exactArea">0.00</div>
+      </div>
+      <div class="metric-card">
+        <div class="lbl">Error Relativo</div>
+        <div class="val" id="errorVal">0.00%</div>
+      </div>
+    </div>
+    
+    <div style="position: relative; height:400px;">
+      <canvas id="riemannChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+let chart = null;
+
+// Interpolación Lineal por tramos para calcular la curva entre puntos
+function interpolate(x, points) {
+  for (let i = 0; i < points.length - 1; i++) {
+    if (x >= points[i].x && x <= points[i+1].x) {
+      const t = (x - points[i].x) / (points[i+1].x - points[i].x);
+      return points[i].y + t * (points[i+1].y - points[i].y);
+    }
+  }
+  return 0;
+}
+
+// Función auxiliar para convertir horas (string o número) a horas transcurridas desde las 8:00 AM
+function parseTimeToHours(timeStr) {
+  const str = timeStr.toString().trim().toLowerCase();
+  
+  // Si contiene ":" (ej: "8:00", "10:30", "2:00 pm")
+  if (str.includes(':')) {
+    const parts = str.split(':');
+    let hours = parseFloat(parts[0]);
+    let minutes = parseFloat(parts[1]) || 0;
+    
+    if (str.includes('pm') && hours < 12) hours += 12;
+    if (str.includes('am') && hours === 12) hours = 0;
+    
+    const decimalHours = hours + (minutes / 60);
+    // Calcular transcurrido desde las 8:00 AM (8.0)
+    return decimalHours - 8;
+  }
+  
+  // Si es solo un número directo
+  const val = parseFloat(str);
+  // Si el valor ingresado es entre 8 y 24, asumimos que es hora del día en punto (ej: 8, 10, 12, 14, 22)
+  if (val >= 8 && val <= 24) {
+    return val - 8;
+  }
+  // Si es menor a 8 (ej: 0, 2, 4, 14), se asume que ya son horas transcurridas
+  return val;
+}
+
+function parseData() {
+  const lines = document.getElementById('dataInput').value.trim().split('\n');
+  const points = [];
+  
+  for (let line of lines) {
+    const parts = line.split(',');
+    if (parts.length >= 2) {
+      const xRaw = parts[0];
+      const yRaw = parts[1];
+      
+      const x = parseTimeToHours(xRaw);
+      const y = parseFloat(yRaw.trim());
+      
+      if (!isNaN(x) && !isNaN(y)) {
+        points.push({x, y});
+      }
+    }
+  }
+  return points.sort((a, b) => a.x - b.x);
+}
+
+function updateSimulation() {
+  const points = parseData();
+  if (points.length < 2) return;
+
+  const N = parseInt(document.getElementById('rectCount').value);
+  const rule = document.getElementById('ruleSelect').value;
+  document.getElementById('nVal').innerText = N;
+
+  const a = points[0].x;
+  const b = points[points.length - 1].x;
+  const dx = (b - a) / N;
+
+  // 1. Curva suavizada (puntos continuos)
+  const curvePoints = [];
+  const resolution = 200;
+  let exactArea = 0;
+  const step = (b - a) / resolution;
+
+  for (let i = 0; i <= resolution; i++) {
+    const x = a + i * step;
+    const y = interpolate(x, points);
+    curvePoints.push({x, y});
+    if (i < resolution) exactArea += y * step; // Integral Trapezoidal fina
+  }
+
+  // 2. Construcción de los rectángulos
+  const rectBars = [];
+  let estimatedArea = 0;
+
+  for (let i = 0; i < N; i++) {
+    const xLeft = a + i * dx;
+    const xRight = xLeft + dx;
+    let evalX = xLeft;
+
+    if (rule === 'right') evalX = xRight;
+    if (rule === 'midpoint') evalX = xLeft + dx / 2;
+
+    const height = interpolate(evalX, points);
+    estimatedArea += height * dx;
+
+    // Generar el rectángulo como una barra de rango x
+    rectBars.push({
+      xMin: xLeft,
+      xMax: xRight,
+      y: height
+    });
+  }
+
+  // Actualizar métricas
+  const error = Math.abs((estimatedArea - exactArea) / exactArea) * 100;
+  document.getElementById('estimatedArea').innerText = estimatedArea.toFixed(2);
+  document.getElementById('exactArea').innerText = exactArea.toFixed(2);
+  document.getElementById('errorVal').innerText = error.toFixed(2) + '%';
+
+  // Dibuja el gráfico con Chart.js
+  renderChart(points, curvePoints, rectBars, a, b);
+}
+
+function renderChart(rawPoints, curvePoints, rectBars, a, b) {
+  const ctx = document.getElementById('riemannChart').getContext('2d');
+  if (chart) chart.destroy();
+
+  // Generar dataset para dibujar los rectángulos paso a paso
+  const rectDatasets = rectBars.map((r) => ({
+    type: 'line',
+    label: 'Rectángulo',
+    data: [
+      {x: r.xMin, y: 0},
+      {x: r.xMin, y: r.y},
+      {x: r.xMax, y: r.y},
+      {x: r.xMax, y: 0}
+    ],
+    borderColor: 'rgba(37, 99, 235, 0.6)',
+    backgroundColor: 'rgba(37, 99, 235, 0.25)',
+    fill: true,
+    pointRadius: 0,
+    borderWidth: 1.5
+  }));
+
+  chart = new Chart(ctx, {
+    data: {
+      datasets: [
+        {
+          type: 'line',
+          label: 'Datos Medidos',
+          data: rawPoints,
+          borderColor: '#ef4444',
+          backgroundColor: '#ef4444',
+          pointRadius: 5,
+          showLine: false
+        },
+        {
+          type: 'line',
+          label: 'Curva Ajustada',
+          data: curvePoints,
+          borderColor: '#059669',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          fill: false,
+          tension: 0.1
+        },
+        ...rectDatasets
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          labels: {
+            filter: item => item.text !== 'Rectángulo' // Ocultar duplicados
+          }
+        }
+      },
+      scales: {
+        x: { 
+          type: 'linear', 
+          position: 'bottom', 
+          min: a, 
+          max: b,
+          title: {
+            display: true,
+            text: 'Horas transcurridas (0 = 8:00 AM)'
+          }
+        },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+}
+
+// Inicializar la simulación
+document.getElementById('rectCount').addEventListener('input', updateSimulation);
+document.getElementById('ruleSelect').addEventListener('change', updateSimulation);
+window.onload = updateSimulation;
+</script>
+
+</body>
+</html>
